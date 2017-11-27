@@ -3,9 +3,88 @@ package bip39
 import (
 	"encoding/hex"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
+	"fmt"
+	"reflect"
+	"bytes"
 )
+
+func assertNotNil(t *testing.T, object interface{}){
+	if isNil(object) {
+		t.Fatal(fmt.Sprintf("Expected nil, but got: %#v", object))
+	}
+}
+
+func assertNil(t *testing.T, object interface{}){
+	if !isNil(object) {
+		t.Fatal("Expected value not to be nil.")
+	}
+}
+// isNil checks if a specified object is nil or not, without Failing.
+func isNil(object interface{}) bool {
+	if object == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(object)
+	kind := value.Kind()
+	if kind >= reflect.Chan && kind <= reflect.Slice && value.IsNil() {
+		return true
+	}
+
+	return false
+}
+
+
+func assertNoError(t *testing.T, err error){
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func ObjectsAreEqual(expected, actual interface{}) bool {
+
+	if expected == nil || actual == nil {
+		return expected == actual
+	}
+	if exp, ok := expected.([]byte); ok {
+		act, ok := actual.([]byte)
+		if !ok {
+			return false
+		} else if exp == nil || act == nil {
+			return exp == nil && act == nil
+		}
+		return bytes.Equal(exp, act)
+	}
+	return reflect.DeepEqual(expected, actual)
+
+}
+
+func ObjectsAreEqualValues(expected, actual interface{}) bool {
+	if ObjectsAreEqual(expected, actual) {
+		return true
+	}
+	actualType := reflect.TypeOf(actual)
+	if actualType == nil {
+		return false
+	}
+	expectedValue := reflect.ValueOf(expected)
+	if expectedValue.IsValid() && expectedValue.Type().ConvertibleTo(actualType) {
+		// Attempt comparison after type conversion
+		return reflect.DeepEqual(expectedValue.Convert(actualType).Interface(), actual)
+	}
+	return false
+}
+
+
+
+func assertEqual(t *testing.T, expected, actual interface{}){
+	if !ObjectsAreEqual(expected, actual) {
+		t.Fatal(fmt.Sprintf("Not equal: \n"+
+			"expected: %s\n"+
+			"actual: %s%s", expected, actual))
+	}
+
+}
 
 type Vector struct {
 	entropy  string
@@ -16,39 +95,39 @@ type Vector struct {
 func TestBip39(t *testing.T) {
 	for i, vector := range testVectors() {
 		entropy, err := hex.DecodeString(vector.entropy)
-		assert.NoError(t, err)
+		assertNoError(t, err)
 
 		mnemonic, err := NewMnemonic(entropy)
-		assert.NoError(t, err)
-		assert.Equal(t, vector.mnemonic, mnemonic)
+		assertNoError(t, err)
+		assertEqual(t, vector.mnemonic, mnemonic)
 
 		// expectedSeed, err := hex.DecodeString(vector.seed)
 		_, err = NewSeedWithErrorChecking(mnemonic, "TREZOR")
 		// Test Vectors 0, 4, and 8 do not work as intended.
 		if (i != 0) && (i != 4) && (i != 8) {
-			assert.Nil(t, err)
+			assertNil(t, err)
 		} else {
-			assert.NotNil(t, err)
+			assertNotNil(t, err)
 		}
 		seed := NewSeed(mnemonic, "TREZOR")
-		assert.Equal(t, vector.seed, hex.EncodeToString(seed))
+		assertEqual(t, vector.seed, hex.EncodeToString(seed))
 	}
 }
 
 func TestIsMnemonicValid(t *testing.T) {
 	for _, vector := range badMnemonicSentences() {
-		assert.Equal(t, IsMnemonicValid(vector.mnemonic), false)
+		assertEqual(t, IsMnemonicValid(vector.mnemonic), false)
 	}
 
 	for _, vector := range testVectors() {
-		assert.Equal(t, IsMnemonicValid(vector.mnemonic), true)
+		assertEqual(t, IsMnemonicValid(vector.mnemonic), true)
 	}
 }
 
 func TestInvalidMnemonicFails(t *testing.T) {
 	for _, vector := range badMnemonicSentences() {
 		_, err := MnemonicToByteArray(vector.mnemonic)
-		assert.NotNil(t, err)
+		assertNotNil(t, err)
 	}
 }
 
@@ -58,23 +137,23 @@ func TestValidateEntropyWithChecksumBitSize(t *testing.T) {
 		err := validateEntropyWithChecksumBitSize(i)
 		switch i {
 		case 132: // 128 + 4
-			assert.Nil(t, err)
+			assertNil(t, err)
 		case 165: // 160 + 5
-			assert.Nil(t, err)
+			assertNil(t, err)
 		case 198: // 192 + 6
-			assert.Nil(t, err)
+			assertNil(t, err)
 		case 231: // 224 + 7
-			assert.Nil(t, err)
+			assertNil(t, err)
 		case 264: // 256 + 8
-			assert.Nil(t, err)
+			assertNil(t, err)
 		default:
-			assert.NotNil(t, err)
+			assertNotNil(t, err)
 		}
 	}
 	// Bad Tests
 	for i := 4; i <= 8; i++ {
 		err := validateEntropyWithChecksumBitSize((i * 32) + (i + 1))
-		assert.NotNil(t, err)
+		assertNotNil(t, err)
 	}
 }
 
@@ -82,13 +161,13 @@ func TestNewEntropy(t *testing.T) {
 	// Good tests.
 	for i := 128; i <= 256; i += 32 {
 		_, err := NewEntropy(i)
-		assert.Nil(t, err)
+		assertNil(t, err)
 	}
 	// Bad Values
 	for i := 0; i <= 256; i++ {
 		if i%8 != 0 {
 			_, err := NewEntropy(i)
-			assert.NotNil(t, err)
+			assertNotNil(t, err)
 		}
 	}
 }
